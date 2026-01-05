@@ -261,35 +261,43 @@ def sync_prices():
 
 
 def scrape_with_selenium(url):
-    """Scrape un lien avec Selenium (comme ton code qui marche)"""
+    """Scrape un lien avec Selenium"""
     from selenium import webdriver
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.chrome.service import Service
     
     options = webdriver.ChromeOptions()
-    options.add_argument("--headless")
+    options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
-    options.add_argument("--remote-debugging-port=9222")
+    options.add_argument("--window-size=1920,1080")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-    
-    # Pour Railway/Cloud avec Chromium
     options.add_argument("--disable-software-rasterizer")
     options.add_argument("--disable-extensions")
-    options.add_argument("--single-process")
     
-    # Utiliser Chromium si disponible (Railway)
-    chrome_bin = os.environ.get('CHROME_BIN')
-    if chrome_bin:
+    # Utiliser Chrome du système si disponible
+    chrome_bin = os.environ.get('CHROME_BIN', '/usr/bin/google-chrome')
+    if os.path.exists(chrome_bin):
         options.binary_location = chrome_bin
     
     driver = None
     price, sales = None, None
     
     try:
-        driver = webdriver.Chrome(options=options)
+        # Essayer avec chromedriver du système
+        chromedriver_path = os.environ.get('CHROMEDRIVER_PATH', '/usr/local/bin/chromedriver')
+        if os.path.exists(chromedriver_path):
+            service = Service(chromedriver_path)
+            driver = webdriver.Chrome(service=service, options=options)
+        else:
+            # Sinon utiliser chromedriver-autoinstaller
+            import chromedriver_autoinstaller
+            chromedriver_autoinstaller.install()
+            driver = webdriver.Chrome(options=options)
+        
         driver.get(url)
         
         WebDriverWait(driver, 15).until(
