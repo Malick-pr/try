@@ -18,9 +18,16 @@ import logging
 from flask import Flask, render_template_string, jsonify, request
 from apscheduler.schedulers.background import BackgroundScheduler
 
-# Scraping avec requests + BeautifulSoup (pas besoin de Chrome en cloud)
-import requests
-from bs4 import BeautifulSoup
+# Scraping avec Selenium
+try:
+    import chromedriver_autoinstaller
+    from selenium import webdriver
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    SELENIUM_AVAILABLE = True
+except ImportError:
+    SELENIUM_AVAILABLE = False
 
 # Apify
 try:
@@ -197,16 +204,16 @@ def save_ad(raw, country):
     conn.close()
 
 
-# ==================== SCRAPING PRIX (avec requests, pas Selenium) ====================
+# ==================== SCRAPING PRIX (avec Selenium) ====================
 
 def sync_prices():
-    """Scrape les prix/ventes avec requests (pas besoin de Chrome)"""
+    """Scrape les prix/ventes avec Selenium"""
     if state['running']:
         return
     
     conn = get_db()
     links = [r['link'] for r in conn.execute(
-        'SELECT link FROM ads WHERE status="active" ORDER BY last_seen DESC LIMIT 100'
+        'SELECT link FROM ads WHERE status="active" ORDER BY last_seen DESC LIMIT 50'
     ).fetchall()]
     conn.close()
     
@@ -222,54 +229,117 @@ def sync_prices():
     
     log_msg(f"[START] Scraping {len(links)} liens...")
     
-    success = 0
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-    }
+    # Installer chromedriver
+    try:
+        import chromedriver_autoinstaller
+        chromedriver_autoinstaller.install()
+    except Exception as e:
+        log_msg(f"[ERR] Chromedriver: {str(e)[:30]}")
     
+    success = 0
     for i, link in enumerate(links):
         with lock:
             state['progress'] = i + 1
         
         try:
-            resp = requests.get(link, headers=headers, timeout=10)
-            if resp.status_code == 200:
-                price, sales = parse_page(resp.text)
-                
-                if price and sales:
-                    save_stats(link, price, sales)
-                    success += 1
-                    
+            price, sales = scrape_with_selenium(link)
+            
+            if price and sales:
+                save_stats(link, price, sales)
+                success += 1
+                if (i + 1) % 10 == 0:
+                    log_msg(f"[PROG] {i+1}/{len(links)} - {success} OK")
         except Exception as e:
             pass
         
-        time.sleep(0.5)
+        time.sleep(1)
     
     log_msg(f"[DONE] Scraping: {success}/{len(links)} reussis")
     
     with lock:
         state['running'] = False
 
-def parse_page(html):
-    """Parse le HTML pour extraire prix et ventes"""
+
+def scrape_with_selenium(url):
+    """Scrape un lien avec Selenium (comme ton code qui marche)"""
+    from selenium import webdriver
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    
+    options = webdriver.ChromeOptions()
+    options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--remote-debugging-port=9222")
+    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+    
+    # Pour Railway/Cloud
+    options.add_argument("--disable-software-rasterizer")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--single-process")
+    
+    driver = None
     price, sales = None, None
     
-    # Chercher ventes: "XXX Sales"
-    match = re.search(r'(\d+)\s*Sales', html, re.IGNORECASE)
-    if match:
-        sales = int(match.group(1))
+    try:
+        driver = webdriver.Chrome(options=options)
+        driver.get(url)
+        
+        WebDriverWait(driver, 15).until(
+            EC.presence_of_element_located((By.TAG_NAME, "body"))
+        )
+        time.sleep(3)
+        
+        # METHODE 1: Chercher "XXX Sales" dans les elements
+        try:
+            all_elements = driver.find_elements(By.XPATH, "//*[contains(text(), 'Sales')]")
+            for elem in all_elements:
+                text = elem.text.strip()
+                match = re.search(r"(\d+)\s*Sales", text, re.IGNORECASE)
+                if match:
+                    sales = int(match.group(1))
+                    break
+        except:
+            pass
+        
+        # METHODE 2: Chercher dans le HTML source
+        if not sales:
+            try:
+                page_source = driver.page_source
+                match = re.search(r"(\d+)\s*Sales", page_source, re.IGNORECASE)
+                if match:
+                    sales = int(match.group(1))
+            except:
+                pass
+        
+        # PRIX: Chercher dans les classes red
+        try:
+            price_elem = driver.find_element(By.CSS_SELECTOR, "div.text-red-500")
+            text = price_elem.text.replace(' ', '').replace(',', '')
+            match = re.search(r"(\d+)", text)
+            if match:
+                price = float(match.group(1))
+        except:
+            try:
+                price_elem = driver.find_element(By.XPATH, "//div[contains(@class, 'text-red')]")
+                text = price_elem.text.replace(' ', '').replace(',', '')
+                match = re.search(r"(\d+)", text)
+                if match:
+                    price = float(match.group(1))
+            except:
+                pass
+        
+    except Exception as e:
+        pass
     
-    # Chercher prix dans les classes red
-    soup = BeautifulSoup(html, 'html.parser')
-    
-    # Méthode 1: classe text-red-500
-    red_divs = soup.find_all('div', class_=re.compile(r'text-red'))
-    for div in red_divs:
-        text = div.get_text().replace(' ', '').replace(',', '')
-        m = re.search(r'(\d+)', text)
-        if m:
-            price = float(m.group(1))
-            break
+    finally:
+        if driver:
+            try:
+                driver.quit()
+            except:
+                pass
     
     return price, sales
 
@@ -289,17 +359,60 @@ def save_stats(link, price, sales):
 # ==================== SYNC COMPLÈTE ====================
 
 def full_sync():
-    """Sync complete: Facebook + Prix"""
+    """Sync complete: Facebook + Prix + Nettoyage"""
     log_msg("[AUTO] Sync automatique demarree")
     sync_facebook()
     time.sleep(5)
     sync_prices()
+    time.sleep(2)
+    cleanup_old_ads()  # Nettoyage automatique
     
     with lock:
         next_time = datetime.now() + timedelta(hours=SYNC_INTERVAL_HOURS)
         state['next_sync'] = next_time.strftime('%H:%M')
     
     log_msg(f"[OK] Sync terminee. Prochaine: {state['next_sync']}")
+
+
+def cleanup_old_ads():
+    """Nettoie les pubs inactives et vieilles stats"""
+    conn = get_db()
+    c = conn.cursor()
+    
+    # 1. Marquer comme "archived" les pubs pas vues depuis 7 jours
+    c.execute('''
+        UPDATE ads SET status = 'archived'
+        WHERE status = 'active'
+        AND datetime(last_seen) < datetime('now', '-7 days')
+    ''')
+    archived = c.rowcount
+    
+    # 2. Supprimer les pubs archivees depuis plus de 30 jours
+    c.execute('''
+        DELETE FROM ads
+        WHERE status = 'archived'
+        AND datetime(last_seen) < datetime('now', '-30 days')
+    ''')
+    deleted_ads = c.rowcount
+    
+    # 3. Supprimer les stats de plus de 30 jours
+    c.execute('''
+        DELETE FROM stats
+        WHERE datetime(ts) < datetime('now', '-30 days')
+    ''')
+    deleted_stats = c.rowcount
+    
+    # 4. Supprimer les stats orphelines (pubs supprimees)
+    c.execute('''
+        DELETE FROM stats
+        WHERE link NOT IN (SELECT link FROM ads)
+    ''')
+    
+    conn.commit()
+    conn.close()
+    
+    if archived > 0 or deleted_ads > 0 or deleted_stats > 0:
+        log_msg(f"[CLEAN] Archive:{archived} Suppr:{deleted_ads} Stats:{deleted_stats}")
 
 
 # ==================== API ====================

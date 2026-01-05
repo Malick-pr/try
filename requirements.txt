@@ -2,5 +2,6 @@ flask==3.0.0
 gunicorn==21.2.0
 apscheduler==3.10.4
 requests==2.31.0
-beautifulsoup4==4.12.2
 apify-client==1.6.0
+selenium==4.15.0
+chromedriver-autoinstaller==0.6.2
