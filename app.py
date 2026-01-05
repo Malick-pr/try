@@ -111,7 +111,7 @@ def log_msg(msg):
 def sync_facebook():
     """Sync les pubs Facebook via Apify"""
     if not APIFY_TOKEN:
-        log_msg("❌ APIFY_TOKEN non configuré!")
+        log_msg("[ERREUR] APIFY_TOKEN non configure!")
         return
     
     if state['running']:
@@ -119,11 +119,11 @@ def sync_facebook():
     
     with lock:
         state['running'] = True
-        state['task'] = '📡 Facebook'
+        state['task'] = 'Facebook'
         state['progress'] = 0
         state['total'] = len(COUNTRIES)
     
-    log_msg("🚀 Sync Facebook démarrée...")
+    log_msg("[START] Sync Facebook demarree...")
     
     try:
         client = ApifyClient(APIFY_TOKEN)
@@ -148,17 +148,19 @@ def sync_facebook():
                         save_ad(ad, country)
                         total += 1
                     
-                    log_msg(f"✅ {country}: {len(items)} pubs")
+                    log_msg(f"[OK] {country}: {len(items)} pubs")
                     
             except Exception as e:
-                log_msg(f"❌ {country}: {str(e)[:50]}")
+                err_msg = str(e).encode('ascii', 'ignore').decode('ascii')[:50]
+                log_msg(f"[ERR] {country}: {err_msg}")
             
             time.sleep(1)
         
-        log_msg(f"🎉 Facebook: {total} pubs importées")
+        log_msg(f"[DONE] Facebook: {total} pubs importees")
         
     except Exception as e:
-        log_msg(f"❌ Erreur: {e}")
+        err_msg = str(e).encode('ascii', 'ignore').decode('ascii')[:50]
+        log_msg(f"[ERR] Erreur: {err_msg}")
     
     finally:
         with lock:
@@ -207,16 +209,16 @@ def sync_prices():
     conn.close()
     
     if not links:
-        log_msg("⚠️ Aucun lien à scraper")
+        log_msg("[WARN] Aucun lien a scraper")
         return
     
     with lock:
         state['running'] = True
-        state['task'] = '💰 Prix'
+        state['task'] = 'Prix'
         state['progress'] = 0
         state['total'] = len(links)
     
-    log_msg(f"🚀 Scraping {len(links)} liens...")
+    log_msg(f"[START] Scraping {len(links)} liens...")
     
     success = 0
     headers = {
@@ -241,7 +243,7 @@ def sync_prices():
         
         time.sleep(0.5)
     
-    log_msg(f"🎉 Scraping: {success}/{len(links)} réussis")
+    log_msg(f"[DONE] Scraping: {success}/{len(links)} reussis")
     
     with lock:
         state['running'] = False
@@ -285,8 +287,8 @@ def save_stats(link, price, sales):
 # ==================== SYNC COMPLÈTE ====================
 
 def full_sync():
-    """Sync complète: Facebook + Prix"""
-    log_msg("⏰ Sync automatique démarrée")
+    """Sync complete: Facebook + Prix"""
+    log_msg("[AUTO] Sync automatique demarree")
     sync_facebook()
     time.sleep(5)
     sync_prices()
@@ -295,7 +297,7 @@ def full_sync():
         next_time = datetime.now() + timedelta(hours=SYNC_INTERVAL_HOURS)
         state['next_sync'] = next_time.strftime('%H:%M')
     
-    log_msg(f"✅ Sync terminée. Prochaine: {state['next_sync']}")
+    log_msg(f"[OK] Sync terminee. Prochaine: {state['next_sync']}")
 
 
 # ==================== API ====================
@@ -632,11 +634,11 @@ def health():
     return 'OK'
 
 
-# ==================== INIT AU DÉMARRAGE ====================
+# ==================== INIT AU DEMARRAGE ====================
 
-# Initialiser la DB immédiatement (pas seulement dans __main__)
+# Initialiser la DB immediatement (pas seulement dans __main__)
 init_db()
-log_msg("✅ Base de données initialisée")
+log_msg("[OK] Base de donnees initialisee")
 
 # Scheduler pour sync automatique
 scheduler = BackgroundScheduler()
@@ -647,7 +649,7 @@ scheduler.start()
 next_time = datetime.now() + timedelta(hours=SYNC_INTERVAL_HOURS)
 state['next_sync'] = next_time.strftime('%H:%M')
 
-log_msg(f"⏰ Auto-sync toutes les {SYNC_INTERVAL_HOURS}h")
+log_msg(f"[SCHED] Auto-sync toutes les {SYNC_INTERVAL_HOURS}h")
 
 
 # ==================== MAIN ====================
