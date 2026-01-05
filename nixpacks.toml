@@ -1,8 +1,12 @@
 [phases.setup]
-nixPkgs = ["google-chrome-stable", "chromedriver"]
+nixPkgs = ["chromium", "chromium.chromedriver"]
 
 [phases.install]
 cmds = ["pip install -r requirements.txt"]
 
 [start]
 cmd = "gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120"
+
+[variables]
+CHROME_BIN = "/nix/var/nix/profiles/default/bin/chromium"
+CHROMEDRIVER_PATH = "/nix/var/nix/profiles/default/bin/chromedriver"

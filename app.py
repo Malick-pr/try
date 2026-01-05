@@ -275,10 +275,15 @@ def scrape_with_selenium(url):
     options.add_argument("--remote-debugging-port=9222")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     
-    # Pour Railway/Cloud
+    # Pour Railway/Cloud avec Chromium
     options.add_argument("--disable-software-rasterizer")
     options.add_argument("--disable-extensions")
     options.add_argument("--single-process")
+    
+    # Utiliser Chromium si disponible (Railway)
+    chrome_bin = os.environ.get('CHROME_BIN')
+    if chrome_bin:
+        options.binary_location = chrome_bin
     
     driver = None
     price, sales = None, None
