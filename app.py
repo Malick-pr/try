@@ -151,7 +151,8 @@ def sync_facebook():
                     log_msg(f"[OK] {country}: {len(items)} pubs")
                     
             except Exception as e:
-                err_msg = str(e).encode('ascii', 'ignore').decode('ascii')[:50]
+                # Nettoyer TOUS les caractères non-ASCII
+                err_msg = ''.join(c for c in str(e) if ord(c) < 128)[:50]
                 log_msg(f"[ERR] {country}: {err_msg}")
             
             time.sleep(1)
@@ -159,8 +160,9 @@ def sync_facebook():
         log_msg(f"[DONE] Facebook: {total} pubs importees")
         
     except Exception as e:
-        err_msg = str(e).encode('ascii', 'ignore').decode('ascii')[:50]
-        log_msg(f"[ERR] Erreur: {err_msg}")
+        # Nettoyer TOUS les caractères non-ASCII
+        err_msg = ''.join(c for c in str(e) if ord(c) < 128)[:50]
+        log_msg(f"[ERR] Global: {err_msg}")
     
     finally:
         with lock:
@@ -334,17 +336,21 @@ def api_stats():
 def api_ads():
     conn = get_db()
     
+    # Classement par DELTA (evolution) au lieu du CA
     ads = conn.execute('''
         SELECT 
             a.link, a.page, a.country, a.product, a.first_seen,
-            s1.price, s1.sales, s1.ca,
-            (SELECT sales FROM stats WHERE link = a.link ORDER BY ts DESC LIMIT 1 OFFSET 1) as prev_sales
+            s1.price, s1.sales, s1.ca, s1.ts as last_ts,
+            s2.sales as prev_sales
         FROM ads a
         LEFT JOIN stats s1 ON a.link = s1.link AND s1.id = (
             SELECT id FROM stats WHERE link = a.link ORDER BY ts DESC LIMIT 1
         )
+        LEFT JOIN stats s2 ON a.link = s2.link AND s2.id = (
+            SELECT id FROM stats WHERE link = a.link ORDER BY ts DESC LIMIT 1 OFFSET 1
+        )
         WHERE a.status = 'active'
-        ORDER BY s1.ca DESC NULLS LAST
+        ORDER BY (COALESCE(s1.sales, 0) - COALESCE(s2.sales, 0)) DESC
         LIMIT 100
     ''').fetchall()
     
