@@ -278,22 +278,41 @@ def scrape_with_selenium(url):
     options.add_argument("--disable-software-rasterizer")
     options.add_argument("--disable-extensions")
     
-    # Utiliser Chrome du système si disponible
-    chrome_bin = os.environ.get('CHROME_BIN', '/usr/bin/google-chrome')
-    if os.path.exists(chrome_bin):
-        options.binary_location = chrome_bin
+    # Chemin Chrome (Railway utilise google-chrome-stable)
+    chrome_paths = [
+        os.environ.get('CHROME_BIN', ''),
+        '/usr/bin/google-chrome-stable',
+        '/usr/bin/google-chrome',
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser'
+    ]
+    
+    for chrome_path in chrome_paths:
+        if chrome_path and os.path.exists(chrome_path):
+            options.binary_location = chrome_path
+            break
     
     driver = None
     price, sales = None, None
     
     try:
-        # Essayer avec chromedriver du système
-        chromedriver_path = os.environ.get('CHROMEDRIVER_PATH', '/usr/local/bin/chromedriver')
-        if os.path.exists(chromedriver_path):
-            service = Service(chromedriver_path)
+        # Chemin chromedriver
+        chromedriver_paths = [
+            os.environ.get('CHROMEDRIVER_PATH', ''),
+            '/usr/local/bin/chromedriver',
+            '/usr/bin/chromedriver'
+        ]
+        
+        service = None
+        for cd_path in chromedriver_paths:
+            if cd_path and os.path.exists(cd_path):
+                service = Service(cd_path)
+                break
+        
+        if service:
             driver = webdriver.Chrome(service=service, options=options)
         else:
-            # Sinon utiliser chromedriver-autoinstaller
+            # Fallback: utiliser chromedriver-autoinstaller
             import chromedriver_autoinstaller
             chromedriver_autoinstaller.install()
             driver = webdriver.Chrome(options=options)
@@ -345,7 +364,8 @@ def scrape_with_selenium(url):
                 pass
         
     except Exception as e:
-        pass
+        err = ''.join(c for c in str(e) if ord(c) < 128)[:50]
+        log_msg(f"[SCRAPE-ERR] {err}")
     
     finally:
         if driver:
