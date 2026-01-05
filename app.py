@@ -632,6 +632,24 @@ def health():
     return 'OK'
 
 
+# ==================== INIT AU DÉMARRAGE ====================
+
+# Initialiser la DB immédiatement (pas seulement dans __main__)
+init_db()
+log_msg("✅ Base de données initialisée")
+
+# Scheduler pour sync automatique
+scheduler = BackgroundScheduler()
+scheduler.add_job(full_sync, 'interval', hours=SYNC_INTERVAL_HOURS, id='auto_sync')
+scheduler.start()
+
+# Calculer prochaine sync
+next_time = datetime.now() + timedelta(hours=SYNC_INTERVAL_HOURS)
+state['next_sync'] = next_time.strftime('%H:%M')
+
+log_msg(f"⏰ Auto-sync toutes les {SYNC_INTERVAL_HOURS}h")
+
+
 # ==================== MAIN ====================
 
 if __name__ == '__main__':
@@ -639,22 +657,14 @@ if __name__ == '__main__':
     print("📊 E-COMMERCE TRACKER - CLOUD VERSION")
     print("=" * 60)
     
-    init_db()
-    
-    # Scheduler pour sync automatique
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(full_sync, 'interval', hours=SYNC_INTERVAL_HOURS, id='auto_sync')
-    scheduler.start()
-    
-    # Calculer prochaine sync
-    next_time = datetime.now() + timedelta(hours=SYNC_INTERVAL_HOURS)
-    state['next_sync'] = next_time.strftime('%H:%M')
-    
-    log_msg(f"⏰ Auto-sync toutes les {SYNC_INTERVAL_HOURS}h")
     log_msg(f"🌐 Serveur démarré")
     
-    # Première sync au démarrage
-    Thread(target=full_sync, daemon=True).start()
+    # Première sync au démarrage (après 30 sec pour laisser le serveur démarrer)
+    def delayed_sync():
+        time.sleep(30)
+        full_sync()
+    
+    Thread(target=delayed_sync, daemon=True).start()
     
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
